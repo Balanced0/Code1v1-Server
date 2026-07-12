@@ -1,11 +1,11 @@
 import "dotenv/config";
-import bcrypt from "bcryptjs";
 import cors from "cors";
 import express from "express";
 import mongoose from "mongoose";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
-import { AuthRequest, createToken, requireAuth } from "./auth.js";
+import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
+import { auth } from "./better-auth.js";
 import { ContactMessage, Problem, User } from "./models.js";
 
 const app = express();
@@ -13,22 +13,11 @@ const server = createServer(app);
 const io = new Server(server, { cors: { origin: process.env.CLIENT_URL || "http://localhost:3000" } });
 const port = Number(process.env.PORT || 4000);
 const queue: { userId: string; socketId: string }[] = [];
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:3000" }));
+app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:3000", credentials: true }));
+app.all("/api/auth/*splat", toNodeHandler(auth));
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
-app.post("/api/auth/register", async (req, res) => {
-  const { handle, email, password } = req.body;
-  if (!handle || !email || !password || password.length < 8) return res.status(400).json({ message: "Handle, email, and an 8-character password are required." });
-  if (await User.exists({ $or: [{ email: String(email).toLowerCase() }, { handle: String(handle).toLowerCase() }] })) return res.status(409).json({ message: "That email or handle is already in use." });
-  const user = await User.create({ handle, email, passwordHash: await bcrypt.hash(password, 12), ratingHistory: [{ date: new Date().toISOString().slice(0, 10), rating: 1200 }] });
-  res.status(201).json({ token: createToken(user.id), user: { id: user.id, handle: user.handle, rating: user.rating } });
-});
-app.post("/api/auth/login", async (req, res) => {
-  const user = await User.findOne({ email: String(req.body.email || "").toLowerCase() });
-  if (!user || !(await bcrypt.compare(req.body.password || "", user.passwordHash))) return res.status(401).json({ message: "Email or password is incorrect." });
-  res.json({ token: createToken(user.id), user: { id: user.id, handle: user.handle, rating: user.rating } });
-});
 
 app.get("/api/problems", async (req, res) => {
   const { search = "", difficulty, tag, sort = "newest", page = "1" } = req.query;
@@ -47,14 +36,17 @@ app.get("/api/problems/:id", async (req, res) => {
   const related = await Problem.find({ _id: { $ne: problem.id }, $or: [{ difficulty: problem.difficulty }, { tags: { $in: problem.tags } }] }).limit(3);
   res.json({ problem, related });
 });
-app.post("/api/problems", requireAuth, async (req: AuthRequest, res) => {
+async function getUserId(req: express.Request) { return (await auth.api.getSession({ headers: fromNodeHeaders(req.headers) }))?.user.id; }
+app.post("/api/problems", async (req, res) => {
+  const userId=await getUserId(req); if (!userId) return res.status(401).json({ message:"Authentication required." });
   const required = ["title", "shortDescription", "statement", "difficulty", "constraints", "sampleInput", "sampleOutput"];
   if (required.some((field) => !req.body[field]) || !Array.isArray(req.body.tags) || !req.body.tags.length) return res.status(400).json({ message: "Please complete every required problem field." });
-  res.status(201).json(await Problem.create({ ...req.body, author: req.userId }));
+  res.status(201).json(await Problem.create({ ...req.body, author: userId }));
 });
-app.get("/api/me/problems", requireAuth, async (req: AuthRequest, res) => res.json(await Problem.find({ author: req.userId }).sort({ createdAt: -1 })));
-app.delete("/api/problems/:id", requireAuth, async (req: AuthRequest, res) => {
-  if (!(await Problem.findOneAndDelete({ _id: req.params.id, author: req.userId }))) return res.status(404).json({ message: "Problem not found." });
+app.get("/api/me/problems", async (req,res) => {const userId=await getUserId(req);if(!userId)return res.status(401).json({message:"Authentication required."});res.json(await Problem.find({author:userId}).sort({createdAt:-1}));});
+app.delete("/api/problems/:id", async (req, res) => {
+  const userId=await getUserId(req);if(!userId)return res.status(401).json({message:"Authentication required."});
+  if (!(await Problem.findOneAndDelete({ _id: req.params.id, author: userId }))) return res.status(404).json({ message: "Problem not found." });
   res.status(204).end();
 });
 app.get("/api/leaderboard", async (_req, res) => res.json(await User.find().sort({ rating: -1 }).limit(100).select("handle rating wins losses ratingHistory")));
