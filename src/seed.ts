@@ -1,7 +1,6 @@
 import "dotenv/config";
-import bcrypt from "bcryptjs";
-import mongoose from "mongoose";
-import { Problem, User } from "./models.js";
+import { authClient } from "./better-auth.js";
+import { problems as problemCollection, profiles } from "./database.js";
 
 const problems = [
   ["Watermelon", "Decide whether a watermelon can be split into two even positive parts.", "Easy", ["math", "implementation"], "A single integer w (1 ≤ w ≤ 100).", "8", "YES", 82],
@@ -27,18 +26,17 @@ const problems = [
 ] as const;
 
 async function seed() {
-  await mongoose.connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/code1v1");
-  await Promise.all([Problem.deleteMany({}), User.deleteMany({})]);
-  const passwordHash = await bcrypt.hash("demo12345", 12);
-  const users = await User.insertMany([
-    { handle: "byteblitz", email: "byteblitz@code1v1.dev", passwordHash, rating: 2184, wins: 84, losses: 22, ratingHistory: [{ date: "2026-02-01", rating: 1960 }, { date: "2026-04-01", rating: 2073 }, { date: "2026-07-01", rating: 2184 }] },
-    { handle: "sana.codes", email: "sana@code1v1.dev", passwordHash, rating: 2117, wins: 72, losses: 25, ratingHistory: [{ date: "2026-02-01", rating: 1880 }, { date: "2026-04-01", rating: 2016 }, { date: "2026-07-01", rating: 2117 }] },
-    { handle: "octal_fox", email: "octal@code1v1.dev", passwordHash, rating: 2063, wins: 61, losses: 21, ratingHistory: [{ date: "2026-02-01", rating: 1804 }, { date: "2026-04-01", rating: 1950 }, { date: "2026-07-01", rating: 2063 }] },
-    { handle: "mira.dev", email: "mira@code1v1.dev", passwordHash, rating: 1998, wins: 55, losses: 28, ratingHistory: [{ date: "2026-02-01", rating: 1750 }, { date: "2026-04-01", rating: 1892 }, { date: "2026-07-01", rating: 1998 }] },
-    { handle: "demo", email: "demo@code1v1.dev", passwordHash, rating: 1462, wins: 18, losses: 14, ratingHistory: [{ date: "2026-02-01", rating: 1200 }, { date: "2026-04-01", rating: 1327 }, { date: "2026-07-01", rating: 1462 }] },
-  ]);
-  await Problem.insertMany(problems.map(([title, shortDescription, difficulty, tags, constraints, sampleInput, sampleOutput, acceptanceRate], index) => ({ title, shortDescription, statement: `${title} is a classic competitive programming exercise adapted from Codeforces public problem archives. Read the input carefully and produce exactly the required output.`, difficulty, tags, constraints, sampleInput, sampleOutput, acceptanceRate, author: users[index % users.length]._id })));
-  console.log(`Seeded ${users.length} players and ${problems.length} problems. Demo login: demo@code1v1.dev / demo12345`);
-  await mongoose.disconnect();
+  await authClient.connect();
+  await Promise.all([problemCollection.deleteMany({}), profiles.deleteMany({})]);
+  const players=[
+    {handle:"byteblitz",email:"byteblitz@code1v1.dev",rating:2184,wins:84,losses:22,ratingHistory:[{date:"2026-02-01",rating:1960},{date:"2026-07-01",rating:2184}],createdAt:new Date()},
+    {handle:"sana.codes",email:"sana@code1v1.dev",rating:2117,wins:72,losses:25,ratingHistory:[{date:"2026-02-01",rating:1880},{date:"2026-07-01",rating:2117}],createdAt:new Date()},
+    {handle:"octal_fox",email:"octal@code1v1.dev",rating:2063,wins:61,losses:21,ratingHistory:[{date:"2026-02-01",rating:1804},{date:"2026-07-01",rating:2063}],createdAt:new Date()},
+    {handle:"mira.dev",email:"mira@code1v1.dev",rating:1998,wins:55,losses:28,ratingHistory:[{date:"2026-02-01",rating:1750},{date:"2026-07-01",rating:1998}],createdAt:new Date()},
+  ];
+  await profiles.insertMany(players);
+  await problemCollection.insertMany(problems.map(([title, shortDescription, difficulty, tags, constraints, sampleInput, sampleOutput, acceptanceRate], index) => ({ title, shortDescription, statement: `${title} is a classic competitive programming exercise adapted from Codeforces public problem archives. Read the input carefully and produce exactly the required output.`, difficulty, tags:[...tags], constraints, sampleInput, sampleOutput, acceptanceRate, author:players[index%players.length].handle, createdAt:new Date() })));
+  console.log(`Seeded ${players.length} player profiles and ${problems.length} problems into '${process.env.MONGODB_DB_NAME || "code1v1"}'.`);
+  await authClient.close();
 }
 seed().catch((error) => { console.error(error); process.exit(1); });
