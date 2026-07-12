@@ -1,0 +1,20 @@
+{
+  "name": "code1v1-server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Balanced0/Code1v1-Server.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Balanced0/Code1v1-Server/issues"
+  },
+  "homepage": "https://github.com/Balanced0/Code1v1-Server#readme",
+  "description": ""
+}
